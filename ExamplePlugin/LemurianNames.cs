@@ -18,6 +18,8 @@ using R2API.Networking.Interfaces;
 using R2API.Networking;
 using RoR2.Networking;
 using Facepunch.Steamworks;
+using BepInEx.Configuration;
+using Newtonsoft.Json.Utilities;
 
 namespace LemurianNames
 {
@@ -29,28 +31,69 @@ namespace LemurianNames
         public const string PluginGUID = PluginAuthor + "." + PluginName;
         public const string PluginAuthor = "bouncyshield";
         public const string PluginName = "LemurianNames";
-        public const string PluginVersion = "1.0.2";
+        public const string PluginVersion = "1.1.0";
 
         public void Awake()
         {
             Log.Init(Logger);
+
+            Configs();
 
             NetworkingAPI.RegisterMessageType<Sink>();
 
             On.DevotedLemurianController.InitializeDevotedLemurian += NameFriend;
             On.RoR2.DevotionInventoryController.EvolveDevotedLumerian += UpdateNameFriend;
             On.RoR2.CharacterBody.GetDisplayName += EnforceNameFriend;
+            Run.onRunDestroyGlobal += _ => friends.Clear();
         }
 
         private System.Random random = new();
 
-        private string[] prefixes =
+        public static Dictionary<NetworkInstanceId, string> friends = [];
+
+        private void NameFriend(On.DevotedLemurianController.orig_InitializeDevotedLemurian orig, DevotedLemurianController self, ItemIndex x, DevotionInventoryController y)
+        {
+            orig.Invoke(self, x, y);
+            CharacterMaster lemurianMaster = self._lemurianMaster;
+            string text = fnames[random.Next(fnames.Length)];
+            friends.Add(lemurianMaster.netId, text);
+            if (NetworkServer.active)
+            {
+                NetMessageExtensions.Send((INetMessage)(object)new Sink(lemurianMaster, text), (NetworkDestination)1);
+            }
+        }
+
+        private void UpdateNameFriend(On.RoR2.DevotionInventoryController.orig_EvolveDevotedLumerian orig, DevotionInventoryController self, DevotedLemurianController x)
+        {
+            orig.Invoke(self, x);
+            if (x.DevotedEvolutionLevel == 2)
+            {
+                CharacterMaster lemurianMaster = x._lemurianMaster;
+                string text = prefixes[random.Next(prefixes.Length)] + " " + friends[lemurianMaster.netId];
+                if (text == "King Burger") { text = "Burger King"; }
+                friends[lemurianMaster.netId] = text;
+                if (NetworkServer.active)
+                {
+                    NetMessageExtensions.Send((INetMessage)(object)new Sink(lemurianMaster, text), (NetworkDestination)1);
+                }
+            }
+        }
+
+        private string EnforceNameFriend(On.RoR2.CharacterBody.orig_GetDisplayName orig, CharacterBody self)
+        {
+            if (friends.TryGetValue(self.masterObjectId, out string n)) { return n; }
+            return orig.Invoke(self);
+        }
+
+        private string[] prefixes_default =
         [
             "Fat", "Big", "Large", "Huge", "Jumbo", "Heavy", "Serious", "Prime", "Super", "King",
             "Epic", "Grand", "Elder", "Evil", "Solid"
         ];
 
-        private string[] fnames =
+        private string[] prefixes;
+
+        private string[] fnames_default =
         [
             "James", "Jamie", "Michael", "Mike", "Mikey", "Robert", "Bob", "Bobby", "John", "Johnny",
             "David", "Dave", "Davie", "William", "Bill", "Will", "Billy", "Richard", "Dick", "Joseph",
@@ -68,73 +111,26 @@ namespace LemurianNames
             "Joe", "Alan", "Juan", "Elijah", "Willie", "Randy", "Mason", "Vincent", "Vince", "Liam",
             "Lee", "Roy", "Bobby", "Bradley", "Brad", "Russell", "Russ", "Lucas", "Luke", "Guy",
             "Friend", "Burger", "Martin", "Hugo", "Mateo", "Leo", "Manuel", "Pablo", "Enzo",
-            "Alvaro", "Mario", "Adrian", "Diego", "Bruno", "Oliver", "Marco", "Antonio", "Miguel", "Javier", 
-            "Luca", "Liam", "Gael", "Carlos", "Jose", "Sergio", "Jorge", "Dario", "Hector", "Rodrigo", "Paul", 
-            "Jesus", "Guillermo", "Jaime", "Luis", "Ian", "Mohamed", "Pedro", "Amir", "Ruben", "Ivan", "Saul", 
-            "Raul", "Joel", "Alonso", "Fernando", "Isaac", "Fabio", "Ignacio", "Nacho", "Max", "Leonardo", 
+            "Alvaro", "Mario", "Adrian", "Diego", "Bruno", "Oliver", "Marco", "Antonio", "Miguel", "Javier",
+            "Luca", "Liam", "Gael", "Carlos", "Jose", "Sergio", "Jorge", "Dario", "Hector", "Rodrigo", "Paul",
+            "Jesus", "Guillermo", "Jaime", "Luis", "Ian", "Mohamed", "Pedro", "Amir", "Ruben", "Ivan", "Saul",
+            "Raul", "Joel", "Alonso", "Fernando", "Isaac", "Fabio", "Ignacio", "Nacho", "Max", "Leonardo",
             "Donatello", "Raphael", "Michelangelo", "Snake"
         ];
 
-        public static Dictionary<CharacterMaster, string> friends = [];
+        private string[] fnames;
 
-        private bool rc = false;
-        private void NameFriend(On.DevotedLemurianController.orig_InitializeDevotedLemurian orig, DevotedLemurianController self, ItemIndex x, DevotionInventoryController y)
-        {
-            orig.Invoke(self, x, y);
-            CharacterMaster lemurianMaster = self._lemurianMaster;
-            string text;
-            if (!rc)
-            {
-                text = "Rodrigo";
-                rc = true;
-            }
-            else
-            {
-                text = fnames[random.Next(fnames.Length)];
-            }
-            friends.Add(lemurianMaster, text);
-            if (NetworkServer.active)
-            {
-                NetMessageExtensions.Send((INetMessage)(object)new Sink(lemurianMaster, text), (NetworkDestination)1);
-            }
-        }
+        public static ConfigEntry<string> configNames;
 
-        private bool kc = false;
-        private void UpdateNameFriend(On.RoR2.DevotionInventoryController.orig_EvolveDevotedLumerian orig, DevotionInventoryController self, DevotedLemurianController x)
-        {
-            orig.Invoke(self, x);
-            if (x.DevotedEvolutionLevel == 2)
-            {
-                CharacterMaster lemurianMaster = x._lemurianMaster;
-                string text;
-                if (!kc)
-                {
-                    text = "King " + friends[lemurianMaster];
-                    kc = true;
-                }
-                else
-                {
-                    text = prefixes[random.Next(prefixes.Length)] + " " + friends[lemurianMaster];
-                }
-                if (text == "King Burger") { text = "Burger King"; }
-                friends[lemurianMaster] = text;
-                if (NetworkServer.active)
-                {
-                    NetMessageExtensions.Send((INetMessage)(object)new Sink(lemurianMaster, text), (NetworkDestination)1);
-                }
-            }
-        }
+        public static ConfigEntry<string> configPrefixes;
 
-        private string EnforceNameFriend(On.RoR2.CharacterBody.orig_GetDisplayName orig, CharacterBody self)
+        private void Configs()
         {
-            try
-            {
-                return friends[self._master];
-            }
-            catch
-            {
-                return orig.Invoke(self);
-            }
+            configNames = Config.Bind("Lemurian Names", "Names", string.Join(",", fnames_default), "The random name pool, separated by commas.");
+            configPrefixes = Config.Bind("Lemurian Names", "Prefixes", string.Join(",", prefixes_default), "The random prefix pool, separated by commas");
+
+            fnames = configNames.Value.Split(',');
+            prefixes = configPrefixes.Value.Split(',');
         }
 
         public class Sink : INetMessage, ISerializableObject
@@ -170,15 +166,7 @@ namespace LemurianNames
                 if (!NetworkServer.active)
                 {
                     Log.Info($"Recieved {index} to {name} from host");
-                    CharacterMaster key = CharacterMaster.instancesList.Find((CharacterMaster x) => x.networkIdentity.netId == index);
-                    if (friends.ContainsKey(key))
-                    {
-                        friends[key] = name;
-                    }
-                    else
-                    {
-                        friends.Add(key, name);
-                    }
+                    friends[index] = name;
                 }
             }
         }
